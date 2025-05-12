@@ -1,12 +1,5 @@
 from util import *
 import math
-from sklearn.metrics import ndcg_score
-import numpy as np
-
-# Add your import statements here
-
-
-
 
 class Evaluation():
 
@@ -253,122 +246,79 @@ class Evaluation():
 
 		return meanFscore
 
-	def queryNDCG(self, query_doc_IDs_ordered, query_id, true_doc_IDs, k):
-		# Early return if less than 2 documents
-		if len(query_doc_IDs_ordered[:k]) < 2:
-			return 0.0
+	def queryNDCG(self, query_doc_IDs_ordered, query_id, qrels, k):
+		# Get graded relevance for this query
+		relevance_dict = {}
+		for rel in qrels:
+			if int(rel["query_num"]) == query_id:
+				doc_id = int(rel["id"])
+				position = int(rel["position"])
+				relevance_dict[doc_id] = position
 
-		true_relevance = {doc_id: 1 for doc_id in true_doc_IDs}
+		# Compute DCG
+		DCG = 0.0
+		for i, doc_id in enumerate(query_doc_IDs_ordered[:k]):
+			rel = relevance_dict.get(doc_id, 0.0)
+			# DCG += rel / math.log2(i + 2)
+			DCG += (2**rel - 1) / math.log2(i + 2)
 
-		relevance_scores = []
-		predicted_scores = []
+		# Compute IDCG (ideal ranking)
+		ideal_rels = sorted(relevance_dict.values(), reverse=True)[:k]
+		IDCG = sum(rel / math.log2(i + 2) for i, rel in enumerate(ideal_rels))
 
-		for rank, doc_id in enumerate(query_doc_IDs_ordered[:k]):
-			relevance_scores.append(true_relevance.get(doc_id, 0))
-			predicted_scores.append(1.0 / (rank + 1))
-
-		y_true = np.asarray([relevance_scores])
-		y_score = np.asarray([predicted_scores])
-
-		return ndcg_score(y_true, y_score, k=k)
-
+		return DCG / IDCG if IDCG > 0 else 0.0
+			
+	
 	def meanNDCG(self, doc_IDs_ordered, query_ids, qrels, k):
-	    """
-	    Compute mean nDCG using sklearn.metrics.ndcg_score
-	    """
-	    total_nDCG = 0.0
-	    num_queries = len(query_ids)
-	
-	    for i in range(num_queries):
-	        query_id = query_ids[i]
-	        predicted_docs = doc_IDs_ordered[i]
-	        true_doc_IDs = [int(rel['id']) for rel in qrels if int(rel['query_num']) == query_id] # Get relevant document IDs for this query
-	
-	        nDCG = self.queryNDCG(predicted_docs, query_id, true_doc_IDs, k)
-	        total_nDCG += nDCG
-	
-	    return total_nDCG / num_queries if num_queries > 0 else 0.0
-
-	def queryAveragePrecision(self, query_doc_IDs_ordered, query_id, true_doc_IDs, k):
-		"""
-		Computation of average precision of the Information Retrieval System
-		at a given value of k for a single query (the average of precision@i
-		values for i such that the ith document is truly relevant)
-
-		Parameters
-		----------
-		arg1 : list
-			A list of integers denoting the IDs of documents in
-			their predicted order of relevance to a query
-		arg2 : int
-			The ID of the query in question
-		arg3 : list
-			The list of documents relevant to the query (ground truth)
-		arg4 : int
-			The k value
-
-		Returns
-		-------
-		float
-			The average precision value as a number between 0 and 1
-		"""
-
-		avgPrecision = -1
-
-		#Fill in code here
-		relevant_found = 0
-		precision_sum = 0.0
-		for i in range(min(k, len(query_doc_IDs_ordered))):
-			doc_id = query_doc_IDs_ordered[i]
-			if doc_id in true_doc_IDs:
-				relevant_found += 1
-				precision = relevant_found / (i + 1)
-				precision_sum += precision
-		avgPrecision = precision_sum / len(true_doc_IDs) if len(true_doc_IDs) > 0 else 0.0
-
-		return avgPrecision
-
-
-	def meanAveragePrecision(self, doc_IDs_ordered, query_ids, q_rels, k):
-		"""
-		Computation of MAP of the Information Retrieval System
-		at given value of k, averaged over all the queries
-
-		Parameters
-		----------
-		arg1 : list
-			A list of lists of integers where the ith sub-list is a list of IDs
-			of documents in their predicted order of relevance to the ith query
-		arg2 : list
-			A list of IDs of the queries
-		arg3 : list
-			A list of dictionaries containing document-relevance
-			judgements - Refer cran_qrels.json for the structure of each
-			dictionary
-		arg4 : int
-			The k value
-
-		Returns
-		-------
-		float
-			The MAP value as a number between 0 and 1
-		"""
-
-		meanAveragePrecision = -1
-
-		#Fill in code here
-		total_ap = 0.0
+		total_nDCG = 0.0
 		num_queries = len(query_ids)
+
 		for i in range(num_queries):
 			query_id = query_ids[i]
 			predicted_docs = doc_IDs_ordered[i]
-			# Get relevant documents for this query
-			true_doc_IDs = [int(rel['id']) for rel in q_rels if int(rel['query_num']) == query_id]
-			# Compute average precision for this query
-			ap = self.queryAveragePrecision(predicted_docs, query_id, true_doc_IDs, k)
-			total_ap += ap
-		meanAveragePrecision = total_ap / num_queries if num_queries > 0 else 0.0
+			nDCG = self.queryNDCG(predicted_docs, query_id, qrels, k)
+			total_nDCG += nDCG
+
+		return total_nDCG / num_queries if num_queries > 0 else 0.0
+
+	def queryAveragePrecision(self, query_doc_IDs_ordered, query_id, qrels, k):
+		"""
+		Compute Average Precision@k for a single query using binary relevance from position field.
+		"""
+		RELEVANCE_THRESHOLD = 1
+
+		# Build set of relevant doc IDs for this query
+		relevant_docs = set()
+		for rel in qrels:
+			if int(rel["query_num"]) == query_id and int(rel["position"]) >= RELEVANCE_THRESHOLD:
+				relevant_docs.add(int(rel["id"]))
+
+		num_relevant_found = 0
+		sum_precisions = 0.0
+
+		for i, doc_id in enumerate(query_doc_IDs_ordered[:k]):
+			if doc_id in relevant_docs:
+				num_relevant_found += 1
+				precision_at_i = num_relevant_found / (i + 1)
+				sum_precisions += precision_at_i
+
+		if len(relevant_docs) == 0:
+			return 0.0
+
+		return sum_precisions / min(len(relevant_docs), k)
 
 
-		return meanAveragePrecision
+	def meanAveragePrecision(self, doc_IDs_ordered, query_ids, qrels, k):
+		"""
+		Compute MAP@k averaged across all queries.
+		"""
+		total_AP = 0.0
+		num_queries = len(query_ids)
 
+		for i in range(num_queries):
+			query_id = query_ids[i]
+			predicted_docs = doc_IDs_ordered[i]
+			ap = self.queryAveragePrecision(predicted_docs, query_id, qrels, k)
+			total_AP += ap
+
+		return total_AP / num_queries if num_queries > 0 else 0.0
