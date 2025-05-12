@@ -252,111 +252,25 @@ class Evaluation():
 		meanFscore = total_fscore / num_queries if num_queries > 0 else 0.0
 
 		return meanFscore
-	
-
-	# def queryNDCG(self, query_doc_IDs_ordered, query_id, true_doc_IDs, k):
-	# 	"""
-	# 	Computation of nDCG of the Information Retrieval System
-	# 	at given value of k for a single query
-
-	# 	Parameters
-	# 	----------
-	# 	arg1 : list
-	# 		A list of integers denoting the IDs of documents in
-	# 		their predicted order of relevance to a query
-	# 	arg2 : int
-	# 		The ID of the query in question
-	# 	arg3 : list
-	# 		The list of IDs of documents relevant to the query (ground truth)
-	# 	arg4 : int
-	# 		The k value
-
-	# 	Returns
-	# 	-------
-	# 	float
-	# 		The nDCG value as a number between 0 and 1
-	# 	"""
-
-	# 	nDCG = -1
-
-	# 	#Fill in code here
-	# 	# Compute DCG
-	# 	DCG = 0.0
-	# 	for i in range(min(k, len(query_doc_IDs_ordered))):
-	# 		doc_id = query_doc_IDs_ordered[i]
-	# 		if doc_id in true_doc_IDs:
-	# 			DCG += 1 / math.log2(i + 2)  # i+2 because log2(1) = 0 for i=0
-	# 	# Compute IDCG (ideal DCG)
-	# 	ideal_hits = min(k, len(true_doc_IDs))
-	# 	IDCG = sum(1 / math.log2(i + 2) for i in range(ideal_hits))
-	# 	# Compute nDCG
-	# 	nDCG = DCG / IDCG if IDCG > 0 else 0.0
-
-	# 	return nDCG
-
-
-	# def meanNDCG(self, doc_IDs_ordered, query_ids, qrels, k):
-	# 	"""
-	# 	Computation of nDCG of the Information Retrieval System
-	# 	at a given value of k, averaged over all the queries
-
-	# 	Parameters
-	# 	----------
-	# 	arg1 : list
-	# 		A list of lists of integers where the ith sub-list is a list of IDs
-	# 		of documents in their predicted order of relevance to the ith query
-	# 	arg2 : list
-	# 		A list of IDs of the queries for which the documents are ordered
-	# 	arg3 : list
-	# 		A list of dictionaries containing document-relevance
-	# 		judgements - Refer cran_qrels.json for the structure of each
-	# 		dictionary
-	# 	arg4 : int
-	# 		The k value
-
-	# 	Returns
-	# 	-------
-	# 	float
-	# 		The mean nDCG value as a number between 0 and 1
-	# 	"""
-
-	# 	meanNDCG = -1
-
-	# 	#Fill in code here
-	# 	total_nDCG = 0.0
-	# 	num_queries = len(query_ids)
-	# 	for i in range(num_queries):
-	# 		query_id = query_ids[i]
-	# 		predicted_docs = doc_IDs_ordered[i]
-	# 		# Extract relevant documents for this query from qrels
-	# 		true_doc_IDs = [int(rel['id']) for rel in qrels if int(rel['query_num']) == query_id]
-	# 		# Compute nDCG for this query
-	# 		nDCG = self.queryNDCG(predicted_docs, query_id, true_doc_IDs, k)
-	# 		total_nDCG += nDCG
-	# 	meanNDCG = total_nDCG / num_queries if num_queries > 0 else 0.0
-
-	# 	return meanNDCG
 
 	def queryNDCG(self, query_doc_IDs_ordered, query_id, true_doc_IDs, k):
-	    """
-	    Compute nDCG using sklearn.metrics.ndcg_score
-	    """
-	    # Create a mapping from doc_id to relevance
-	    true_relevance = {doc_id: 1 for doc_id in true_doc_IDs}
-	
-	    relevance_scores = []
-	    predicted_scores = []
-	
-	    for rank, doc_id in enumerate(query_doc_IDs_ordered[:k]):
-	        relevance_scores.append(true_relevance.get(doc_id, 0))
-	        # Assign higher predicted score for higher ranked docs
-	        predicted_scores.append(1.0 / (rank + 1))
-	
-	    # Reshape for sklearn
-	    y_true = np.asarray([relevance_scores])
-	    y_score = np.asarray([predicted_scores])
-	
-	    return ndcg_score(y_true, y_score, k=k)
+		# Early return if less than 2 documents
+		if len(query_doc_IDs_ordered[:k]) < 2:
+			return 0.0
+
+		true_relevance = {doc_id: 1 for doc_id in true_doc_IDs}
+
+		relevance_scores = []
+		predicted_scores = []
+
+		for rank, doc_id in enumerate(query_doc_IDs_ordered[:k]):
+			relevance_scores.append(true_relevance.get(doc_id, 0))
+			predicted_scores.append(1.0 / (rank + 1))
+
+		y_true = np.asarray([relevance_scores])
+		y_score = np.asarray([predicted_scores])
+
+		return ndcg_score(y_true, y_score, k=k)
 
 	def meanNDCG(self, doc_IDs_ordered, query_ids, qrels, k):
 	    """
